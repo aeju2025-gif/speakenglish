@@ -185,23 +185,43 @@
         }
 
         window.generate10SentencesWithAI = async function() {
-            const difficulty = document.getElementById('ai-difficulty-select').value;
-            const loadingEl = document.getElementById('ai-loading');
-            loadingEl.style.display = "block";
+    const difficulty = document.getElementById('ai-difficulty-select').value;
+    const loadingEl = document.getElementById('ai-loading');
+    loadingEl.style.display = "block";
 
-            const promptMessage = `너는 전문적인 영어 선생님이야. 핵심 표현 '${selectedAdminFolder}'를 반드시 포함하는 영어 문장 10개와 그에 맞는 한국어 번역 뜻을 만들어줘. 문장의 수준은 '${difficulty}' 수준으로 맞춰서 작성해. 결과는 JSON 배열로만 작성해.`;
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/${AI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
-            
-            try {
-                const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: promptMessage }] }] }) });
-                const data = await res.json();
-                const aiText = data.candidates[0].content.parts[0].text.replace(/```json/g, "").replace(/```/g, "").trim();
-                const results = JSON.parse(aiText);
-                results.forEach(item => push(ref(db, 'sentences'), { eng: item.eng, expression: selectedAdminFolder, kor: item.kor }));
-                alert("10개의 문장이 생성되었습니다.");
-            } catch(e) { alert("생성 오류: " + e.message); } finally { loadingEl.style.display = "none"; }
+    const promptMessage = `너는 전문적인 영어 선생님이야. 핵심 표현 '${selectedAdminFolder}'를 반드시 포함하는 영어 문장 10개와 그에 맞는 한국어 번역 뜻을 만들어줘. 문장의 수준은 '${difficulty}' 수준으로 맞춰서 작성해. 결과는 JSON 배열로만 작성해.`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${AI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+    
+    try {
+        const response = await fetch(url, { 
+            method: 'POST', 
+            headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify({ contents: [{ parts: [{ text: promptMessage }] }] }) 
+        });
+        
+        const data = await response.json();
+
+        // [핵심 수정] 여기서 data.candidates가 있는지 먼저 확인합니다.
+        if (!data.candidates || data.candidates.length === 0) {
+            console.error("API 응답 상세 내용:", data); // 개발자 도구(F12)에서 확인 가능
+            throw new Error("AI가 응답을 주지 않았습니다. (API Key 확인, 할당량 초과, 또는 안전 필터 차단 가능성)");
         }
 
+        const aiText = data.candidates[0]?.content?.parts?.[0]?.text?.replace(/```json/g, "").replace(/```/g, "").trim();
+        
+        if (!aiText) throw new Error("응답 형식에 문제가 있습니다.");
+
+        const results = JSON.parse(aiText);
+        results.forEach(item => push(ref(db, 'sentences'), { eng: item.eng, expression: selectedAdminFolder, kor: item.kor }));
+        alert("10개의 문장이 생성되었습니다.");
+
+    } catch(e) { 
+        alert("생성 오류 발생: " + e.message);
+        console.error(e); // F12 콘솔창에서 정확한 원인 확인
+    } finally { 
+        loadingEl.style.display = "none"; 
+    }
+}
         window.switchView = function(viewId) {
             ['main', 'study', 'admin-folder', 'admin-register'].forEach(id => document.getElementById(id + '-view').classList.add('hidden'));
             document.getElementById(viewId + '-view').classList.remove('hidden');
