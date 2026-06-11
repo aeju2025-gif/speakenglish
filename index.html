@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 자동 출제 & Firebase 영어 학습 앱</title>
+    <style>
+        :root {
+            --primary-color: #4a90e2;
+            --bg-color: #f5f7fa;
+            --card-color: #ffffff;
+            --admin-color: #e53935;
+        }
+        body {
+            font-family: 'Malgun Gothic', sans-serif;
+            background-color: var(--bg-color);
+            margin: 0;
+            padding: 30px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            box-sizing: border-box;
+        }
+        .top-bar { max-width: 95%; width: 100%; display: flex; justify-content: flex-end; margin-bottom: 15px; }
+        .admin-login-btn { background-color: #78909c; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: bold; }
+        
+        .container {
+            max-width: 95%; width: 100%; background: var(--card-color);
+            padding: 40px; border-radius: 16px; box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+            box-sizing: border-box; margin-bottom: 20px;
+        }
+        h2 { text-align: center; color: #333; margin-top: 0; font-size: 32px; margin-bottom: 20px; }
+        .sub-desc { color:#666; font-size:18px; text-align: center; margin-bottom: 25px; }
+
+        .btn { background-color: var(--primary-color); color: white; border: none; padding: 15px 25px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 18px; }
+        .btn:hover { opacity: 0.9; }
+        .btn-ai { background-color: #8e44ad; width: 100%; } 
+        
+        .admin-header { border-bottom: 3px solid var(--admin-color); padding-bottom: 15px; margin-bottom: 25px; color: var(--admin-color); font-size: 32px; }
+        .form-group { margin-bottom: 20px; }
+        .form-group label { display: block; margin-bottom: 8px; font-weight: bold; font-size: 18px; }
+        .form-group input, .form-group select { width: 100%; padding: 15px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 18px; }
+        .folder-badge { background: #ffebee; color: #c62828; padding: 10px 20px; border-radius: 6px; font-weight: bold; display: inline-block; margin-bottom: 25px; font-size: 18px; }
+        
+        .hidden { display: none !important; }
+        .expression-list { display: flex; flex-direction: column; gap: 15px; margin-top: 20px; }
+        .expression-item { background: #e3f2fd; color: #0d47a1; padding: 20px 30px; border-radius: 12px; cursor: pointer; font-weight: bold; font-size: 22px; border: 1px solid #bbdefb; display: flex; justify-content: space-between; align-items: center; }
+        .expression-item:hover { background: #1976d2; color: white; }
+        .count-tag { background: rgba(0,0,0,0.1); padding: 4px 12px; border-radius: 16px; font-size: 16px; }
+        
+        .card { border: 2px solid #e0e0e0; padding: 60px 40px; border-radius: 12px; text-align: center; margin: 30px 0; background: #fafafa; }
+        .sentence { font-size: 36px; line-height: 2.0; letter-spacing: 0.5px; word-break: break-word; color: #222; }
+        .meaning { font-size: 26px; color: #555; margin-top: 40px; border-top: 2px dashed #ddd; padding-top: 30px; }
+        
+        .expression-highlight { color: #2e7d32; font-weight: bold; border-bottom: 4px solid #4caf50; padding: 0 6px; background-color: #e8f5e9; border-radius: 6px; }
+        .blank { display: inline-block; border-bottom: 3px solid #444; color: transparent; padding: 0 6px; margin: 0 4px; cursor: pointer; user-select: none; transition: color 0.1s; }
+        .blank:active, .blank.reveal { color: #333333; }
+        
+        .nav-btns { display: flex; justify-content: space-between; margin-top: 30px; }
+        .back-btn { background: #757575; }
+        #page-info { align-self: center; font-weight: bold; font-size: 20px; }
+        
+        .loading { display: none; text-align: center; font-size: 20px; color: #8e44ad; font-weight: bold; margin: 15px 0; }
+        
+        .action-btn { padding: 6px 12px; font-size: 15px; margin-left: 10px; border: none; border-radius: 4px; cursor: pointer; color: white; }
+        .btn-edit { background: #ff9800; }
+        .btn-delete { background: #ef5350; }
+    </style>
+</head>
+<body>
+
+    <div class="top-bar">
+        <button id="auth-btn" class="admin-login-btn" onclick="toggleAdminAuth()">🔒 관리자 로그인</button>
+    </div>
+
+    <div id="main-view" class="container">
+        <h2>📚 핵심 표현 목록</h2>
+        <p class="sub-desc">학습할 핵심 표현을 선택하면 문장 연습이 시작됩니다.</p>
+        <div id="loading-data" style="text-align:center; color:#666;">데이터를 불러오는 중입니다...</div>
+        <div class="expression-list" id="main-expression-list"></div>
+    </div>
+
+    <div id="study-view" class="container hidden">
+        <h2 id="study-title">핵심 표현 학습</h2>
+        <div class="card">
+            <div class="sentence" id="study-sentence"></div>
+            <div class="meaning" id="study-meaning"></div>
+        </div>
+        <p style="text-align:center; font-size:16px; color:#999;">💡 빈칸(밑줄)을 손가락으로 터치하고 있으면 원래 단어가 나타납니다.</p>
+        <div class="nav-btns">
+            <button class="btn back-btn" onclick="switchView('main')">목록으로</button>
+            <span id="page-info">1 / 1</span>
+            <button class="btn" id="next-btn" onclick="nextSentence()">다음 문장 ➡️</button>
+        </div>
+    </div>
+
+    <div id="admin-folder-view" class="container hidden">
+        <h2 class="admin-header">🔧 표현 폴더 관리 (관리자)</h2>
+        <div class="form-group" style="display:flex; gap:15px; margin-bottom: 25px;">
+            <input type="text" id="new-folder-name" placeholder="새로운 핵심 표현 입력 (예: want to)">
+            <button class="btn" onclick="createNewFolder()" style="background:#4caf50; white-space:nowrap;">폴더 생성</button>
+        </div>
+        <div class="expression-list" id="admin-folder-list"></div>
+    </div>
+
+    <div id="admin-register-view" class="container hidden">
+        <h2 class="admin-header">📝 문제 등록 및 관리</h2>
+        <div class="folder-badge">현재 폴더 표현: <span id="current-folder-title"></span></div>
+        
+        <div style="background: #f3e5f5; padding: 20px; border-radius: 12px; border: 2px dashed #8e44ad; margin-bottom: 25px;">
+            <span style="font-size: 18px; font-weight: bold; color: #8e44ad;">🤖 AI 추천 문장 10개 자동 생성 (Gemini 2.5 Flash)</span>
+            <p style="margin: 5px 0 15px 0; color: #666; font-size: 14px;">선택한 난이도에 맞춰 10개의 예문을 즉시 생성합니다.</p>
+            
+            <label style="font-weight:bold; color:#333; display:block; margin-bottom:8px;">📊 문장 난이도 선택</label>
+            <select id="ai-difficulty-select" style="margin-bottom:15px; padding:10px; font-size:16px; width:100%; border-radius:8px; border:1px solid #ccc;">
+                <option value="초급(쉽고 짧은 일상 문장)">하 (초급 - 쉽고 짧은 문장)</option>
+                <option value="중급(자주 쓰이는 실용적인 문장)" selected>중 (중급 - 일상적인 실용 문장)</option>
+                <option value="고급(복잡하고 어휘 수준이 높은 문장)">상 (고급 - 복잡하고 수준 높은 문장)</option>
+            </select>
+
+            <button class="btn btn-ai" onclick="generate10SentencesWithAI()">🪄 AI로 새로운 10문제 자동 생성하기</button>
+            <div id="ai-loading" class="loading">⏳ AI가 문장을 생성 중입니다...</div>
+        </div>
+
+        <div style="border: 1px solid #ddd; padding: 20px; border-radius: 12px; margin-bottom: 25px;">
+            <label style="font-weight:bold; font-size:18px; color:#333; display:block; margin-bottom:15px;">✍️ 수동으로 문제 등록하기</label>
+            <div class="form-group"><input type="text" id="input-eng" placeholder="영어 문장 입력 (예: I want to eat pizza.)"></div>
+            <div class="form-group"><input type="text" id="input-kor" placeholder="뜻 입력 (예: 나는 피자를 먹고 싶다.)"></div>
+            <button class="btn" style="background:var(--admin-color);" onclick="addSentence()">수동 등록</button>
+            <button class="btn back-btn" onclick="switchView('admin-folder')" style="margin-left:10px;">폴더 목록으로</button>
+        </div>
+        
+        <h4 style="margin-top:35px; border-top:2px solid #eee; padding-top:20px; font-size: 22px;">등록된 문제 목록 (<span id="folder-count">0</span>)</h4>
+        <ul id="admin-sentence-list" style="padding-left:0; list-style:none; font-size:18px; color:#555; line-height: 2.0;"></ul>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import { getDatabase, ref, push, remove, update, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyB4EJ_I6cHDZZNWvUojTl5PErfdZ4OQ2IU",
+            authDomain: "planb-26263.firebaseapp.com",
+            databaseURL: "https://planb-26263-default-rtdb.firebaseio.com",
+            projectId: "planb-26263",
+            storageBucket: "planb-26263.firebasestorage.app",
+            messagingSenderId: "471806067128",
+            appId: "1:471806067128:web:140ecae721f2e147a04f4d",
+            measurementId: "G-V64Q01CXT0"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+
+        let sentenceData = [];
+        let folderList = [];
+        let isAdminLoggedIn = false;
+        let selectedAdminFolder = ""; 
+        let currentExpression = "";   
+        let filteredSentences = [];
+        let currentIndex = 0;
+
+        const GEMINI_API_KEY = "AIzaSyCzilXVeGGB80Zj4rmwui4t012h6j-0kQk";
+        const AI_MODEL = "gemini-2.5-flash";
+
+        onValue(ref(db, 'sentences'), (snapshot) => {
+            document.getElementById('loading-data').style.display = 'none';
+            sentenceData = [];
+            folderList = [];
+            if (snapshot.exists()) {
+                snapshot.forEach((childSnapshot) => {
+                    const item = childSnapshot.val();
+                    sentenceData.push({ id: childSnapshot.key, ...item });
+                    if (!folderList.includes(item.expression)) folderList.push(item.expression);
+                });
+            }
+            renderUI();
+        });
+
+        function renderUI() {
+            if (!document.getElementById('main-view').classList.contains('hidden')) renderStudentExpressionList();
+            if (!document.getElementById('admin-folder-view').classList.contains('hidden')) renderAdminFolderList();
+            if (!document.getElementById('admin-register-view').classList.contains('hidden')) updateAdminSentenceList();
+        }
+
+        window.generate10SentencesWithAI = async function() {
+            const difficulty = document.getElementById('ai-difficulty-select').value;
+            const loadingEl = document.getElementById('ai-loading');
+            loadingEl.style.display = "block";
+
+            const promptMessage = `너는 전문적인 영어 선생님이야. 핵심 표현 '${selectedAdminFolder}'를 반드시 포함하는 영어 문장 10개와 그에 맞는 한국어 번역 뜻을 만들어줘. 문장의 수준은 '${difficulty}' 수준으로 맞춰서 작성해. 결과는 JSON 배열로만 작성해.`;
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${AI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+            
+            try {
+                const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: promptMessage }] }] }) });
+                const data = await res.json();
+                const aiText = data.candidates[0].content.parts[0].text.replace(/```json/g, "").replace(/```/g, "").trim();
+                const results = JSON.parse(aiText);
+                results.forEach(item => push(ref(db, 'sentences'), { eng: item.eng, expression: selectedAdminFolder, kor: item.kor }));
+                alert("10개의 문장이 생성되었습니다.");
+            } catch(e) { alert("생성 오류: " + e.message); } finally { loadingEl.style.display = "none"; }
+        }
+
+        window.switchView = function(viewId) {
+            ['main', 'study', 'admin-folder', 'admin-register'].forEach(id => document.getElementById(id + '-view').classList.add('hidden'));
+            document.getElementById(viewId + '-view').classList.remove('hidden');
+            renderUI();
+        }
+
+        window.toggleAdminAuth = function() {
+            if (!isAdminLoggedIn) {
+                if (prompt("관리자 비밀번호를 입력하세요:") === "1234") {
+                    isAdminLoggedIn = true;
+                    document.getElementById('auth-btn').innerText = "🔓 로그아웃";
+                    switchView('admin-folder');
+                }
+            } else {
+                isAdminLoggedIn = false;
+                document.getElementById('auth-btn').innerText = "🔒 관리자 로그인";
+                switchView('main');
+            }
+        }
+
+        window.createNewFolder = function() {
+            const name = document.getElementById('new-folder-name').value.trim();
+            if(!name) return;
+            push(ref(db, 'sentences'), { eng: `I ${name} it.`, expression: name, kor: "예시 문장입니다." });
+            document.getElementById('new-folder-name').value = "";
+        }
+
+        window.renderAdminFolderList = function() {
+            const listEl = document.getElementById('admin-folder-list');
+            listEl.innerHTML = "";
+            folderList.forEach(folder => {
+                const count = sentenceData.filter(i => i.expression === folder).length;
+                const div = document.createElement('div');
+                div.className = 'expression-item';
+                div.innerHTML = `<span>📂 <b>${folder}</b></span> <span class="count-tag">${count}개</span>`;
+                div.onclick = () => { selectedAdminFolder = folder; document.getElementById('current-folder-title').innerText = folder; switchView('admin-register'); };
+                listEl.appendChild(div);
+            });
+        }
+
+        window.addSentence = function() {
+            const eng = document.getElementById('input-eng').value.trim();
+            const kor = document.getElementById('input-kor').value.trim();
+            if(!eng || !kor) return;
+            push(ref(db, 'sentences'), { eng, expression: selectedAdminFolder, kor });
+            document.getElementById('input-eng').value = "";
+            document.getElementById('input-kor').value = "";
+        }
+
+        window.updateAdminSentenceList = function() {
+            const listEl = document.getElementById('admin-sentence-list');
+            listEl.innerHTML = "";
+            sentenceData.filter(i => i.expression === selectedAdminFolder).forEach(item => {
+                const li = document.createElement('li');
+                li.innerHTML = `<div><strong>${item.eng}</strong></div><div>${item.kor}</div><button class="action-btn btn-delete" onclick="remove(ref(db, 'sentences/${item.id}'))">🗑️ 삭제</button>`;
+                listEl.appendChild(li);
+            });
+            document.getElementById('folder-count').innerText = sentenceData.filter(i => i.expression === selectedAdminFolder).length;
+        }
+
+        window.renderStudentExpressionList = function() {
+            const listEl = document.getElementById('main-expression-list');
+            listEl.innerHTML = "";
+            folderList.forEach(exp => {
+                const div = document.createElement('div');
+                div.className = 'expression-item';
+                div.innerHTML = `<span>💡 <b>${exp}</b></span>`;
+                div.onclick = () => { startStudy(exp); };
+                listEl.appendChild(div);
+            });
+        }
+
+        window.startStudy = function(exp) {
+            currentExpression = exp;
+            filteredSentences = sentenceData.filter(i => i.expression === exp);
+            currentIndex = 0;
+            switchView('study');
+            renderStudyCard();
+        }
+
+        // 핵심 수정된 부분: 정규식으로 동사 변형 포함하여 인식
+        window.renderStudyCard = function() {
+            if(filteredSentences.length === 0) return;
+            const currentItem = filteredSentences[currentIndex];
+            const sentenceEl = document.getElementById('study-sentence');
+            const meaningEl = document.getElementById('study-meaning');
+            document.getElementById('page-info').innerText = `${currentIndex + 1} / ${filteredSentences.length}`;
+
+            let rawEng = currentItem.eng;
+            const targetExp = currentItem.expression;
+            const escapeRegExp = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            
+            // 핵심 로직: 표현식 사이의 공백을 변형 가능한 패턴으로 대체
+            const flexibleExp = escapeRegExp(targetExp).replace(/ /g, '(s|es|ed|ing)?\\s+');
+            const expRegex = new RegExp(`\\b${flexibleExp}(s|es|ed|ing)?\\b`, 'gi');
+            
+            let matchText = "";
+            rawEng = rawEng.replace(expRegex, (match) => { matchText = match; return "___EXPRESSION_PLACEHOLDER___"; });
+
+            const tokens = rawEng.split(/(\s+)/);
+            let processedHTML = "";
+            tokens.forEach(token => {
+                if (token.trim() === "") processedHTML += token;
+                else if (token === "___EXPRESSION_PLACEHOLDER___") processedHTML += `<span class="expression-highlight">${matchText}</span>`;
+                else {
+                    const match = token.match(/^([a-zA-Z0-9'-]+)([^a-zA-Z0-9'-]*)$/);
+                    if (match) {
+                        processedHTML += `<span class="blank" ontouchstart="toggleBlank(this, true)" ontouchend="toggleBlank(this, false)" onmousedown="toggleBlank(this, true)" onmouseup="toggleBlank(this, false)">${match[1]}</span>${match[2]}`;
+                    } else processedHTML += token;
+                }
+            });
+            sentenceEl.innerHTML = processedHTML;
+            meaningEl.innerText = currentItem.kor;
+            document.getElementById('next-btn').innerText = (currentIndex === filteredSentences.length - 1) ? "학습 완료" : "다음 문장 ➡️";
+        }
+
+        window.toggleBlank = function(element, isShow) { 
+            if(isShow) element.classList.add('reveal'); else element.classList.remove('reveal'); 
+        }
+
+        window.nextSentence = function() {
+            if(currentIndex < filteredSentences.length - 1) { currentIndex++; renderStudyCard(); }
+            else { alert("완료!"); switchView('main'); }
+        }
+    </script>
+</body>
+</html>
