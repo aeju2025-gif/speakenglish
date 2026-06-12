@@ -67,7 +67,6 @@
         .btn-edit { background: #ff9800; }
         .btn-delete { background: #ef5350; }
 
-        /* API 입력 필드 관련 스타일 추가 */
         .api-input-group { margin-bottom: 15px; }
         .api-input-group label { font-weight: bold; color: #333; display: block; margin-bottom: 8px; font-size: 16px; }
         .api-input-group input, .api-input-group select { width: 100%; padding: 10px; font-size: 16px; border-radius: 8px; border: 1px solid #ccc; box-sizing: border-box; }
@@ -182,7 +181,6 @@
         let filteredSentences = [];
         let currentIndex = 0;
 
-        // 브라우저에 저장된 API 키가 있다면 불러오기
         document.addEventListener("DOMContentLoaded", () => {
             const savedApiKey = localStorage.getItem("savedGeminiApiKey");
             if (savedApiKey) {
@@ -211,67 +209,94 @@
         }
 
         window.generate10SentencesWithAI = async function() {
-    const apiKey = document.getElementById('api-key-input').value.trim();
-    const modelName = document.getElementById('ai-model-select').value;
-    const difficulty = document.getElementById('ai-difficulty-select').value;
-    
-    if (!apiKey) {
-        alert("Gemini API 키를 입력해주세요!");
-        document.getElementById('api-key-input').focus();
-        return;
-    }
+            const apiKey = document.getElementById('api-key-input').value.trim();
+            const modelName = document.getElementById('ai-model-select').value;
+            const difficulty = document.getElementById('ai-difficulty-select').value;
+            
+            if (!apiKey) {
+                alert("Gemini API 키를 입력해주세요!");
+                document.getElementById('api-key-input').focus();
+                return;
+            }
 
-    localStorage.setItem("savedGeminiApiKey", apiKey);
+            localStorage.setItem("savedGeminiApiKey", apiKey);
 
-    const loadingEl = document.getElementById('ai-loading');
-    loadingEl.style.display = "block";
+            const loadingEl = document.getElementById('ai-loading');
+            loadingEl.style.display = "block";
 
-    // 💡 [수정 1] AI에게 정확한 JSON 키값(eng, kor)을 쓰도록 강력하게 지시합니다.
-    const promptMessage = `너는 전문적인 영어 선생님이야. 핵심 표현 '${selectedAdminFolder}'(변형된 형태 포함)를 포함하는 난이도 '${difficulty}'의 영어 문장 10개와 뜻을 만들어줘. 
-결과는 반드시 아래 형태의 JSON 배열로만 작성해:
-[{"eng": "영어문장", "kor": "한국어뜻"}]`;
-    
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-    
-    try {
-        const res = await fetch(url, { 
-            method: 'POST', 
-            headers: { 'Content-Type': 'application/json' }, 
-            body: JSON.stringify({ contents: [{ parts: [{ text: promptMessage }] }] }) 
-        });
-        const data = await res.json();
-        
-        if (!data.candidates || data.candidates.length === 0) {
-            console.error("API 응답 에러:", data);
-            throw new Error("AI 응답을 받지 못했습니다. API 키나 할당량을 확인하세요.");
+            // AI에게 데이터 형식을 매우 엄격하게 강제합니다.
+            const promptMessage = `너는 전문적인 영어 선생님이야. 핵심 표현 '${selectedAdminFolder}'(변형된 형태 포함)를 포함하는 영어 문장 10개와 뜻을 만들어줘. 
+결과는 오직 아래 형태의 JSON 배열로만 응답해. 다른 설명은 절대 하지 마.
+[
+  {"eng": "영어문장1", "kor": "한국어뜻1"},
+  {"eng": "영어문장2", "kor": "한국어뜻2"}
+]`;
+            
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+            
+            try {
+                const res = await fetch(url, { 
+                    method: 'POST', 
+                    headers: { 'Content-Type': 'application/json' }, 
+                    body: JSON.stringify({ contents: [{ parts: [{ text: promptMessage }] }] }) 
+                });
+                const data = await res.json();
+                
+                if (!data.candidates || data.candidates.length === 0) {
+                    throw new Error("AI가 응답을 주지 않았습니다.");
+                }
+
+                let aiText = data.candidates[0].content.parts[0].text;
+                aiText = aiText.replace(/```json/g, "").replace(/```/g, "").trim();
+                
+                console.log("🤖 AI가 보낸 원본 데이터:", aiText); // 원본 데이터 확인용 로그
+
+                let results = JSON.parse(aiText);
+                console.log("📦 파싱된 데이터 구조:", results); // 파싱된 구조 확인용 로그
+
+                // AI가 배열이 아닌 객체로 감싸서 보냈을 경우를 대비한 강력한 방어 코드
+                if (!Array.isArray(results)) {
+                    const possibleArray = Object.values(results).find(Array.isArray);
+                    if (possibleArray) {
+                        results = possibleArray;
+                    } else {
+                        throw new Error("AI가 배열 형태로 데이터를 반환하지 않았습니다.");
+                    }
+                }
+
+                // 각 문장을 안전하게 Firebase에 등록
+                let successCount = 0;
+                results.forEach(item => {
+                    const engText = item.eng || item.english || item.sentence || item.en;
+                    const korText = item.kor || item.korean || item.meaning || item.ko;
+                    
+                    if (!engText || !korText) {
+                        console.warn("⚠️ 누락된 데이터 발견, 이 항목은 건너뜁니다:", item);
+                        return; // 값이 없으면 에러를 내지 않고 그냥 넘어감
+                    }
+
+                    push(ref(db, 'sentences'), { 
+                        eng: String(engText), 
+                        expression: selectedAdminFolder, 
+                        kor: String(korText) 
+                    });
+                    successCount++;
+                });
+                
+                if (successCount > 0) {
+                    alert(`${successCount}개의 문장이 성공적으로 생성되었습니다!`);
+                } else {
+                    alert("문장을 생성했지만 올바른 형식이 없어 저장하지 못했습니다. F12 콘솔창을 확인해주세요.");
+                }
+
+            } catch(e) { 
+                alert("생성 오류: " + e.message); 
+                console.error("🚨 상세 에러 로그:", e);
+            } finally { 
+                loadingEl.style.display = "none"; 
+            }
         }
 
-        let aiText = data.candidates[0].content.parts[0].text;
-        // 마크다운 백틱 제거
-        aiText = aiText.replace(/```json/g, "").replace(/```/g, "").trim();
-        const results = JSON.parse(aiText);
-        
-        // 💡 [수정 2] AI가 혹시 다른 키 이름(sentence, english 등)을 쓰더라도 안전하게 저장되도록 방어 코드 추가
-        results.forEach(item => {
-            const engText = item.eng || item.english || item.sentence || item.en;
-            const korText = item.kor || item.korean || item.meaning || item.ko;
-            
-            // 데이터가 undefined가 아닐 때만 Firebase에 푸시
-            if (engText && korText) {
-                push(ref(db, 'sentences'), { eng: engText, expression: selectedAdminFolder, kor: korText });
-            } else {
-                console.warn("AI가 생성한 데이터 형식이 맞지 않아 건너뜁니다:", item);
-            }
-        });
-        
-        alert("10개의 문장이 성공적으로 생성되었습니다!");
-    } catch(e) { 
-        alert("생성 오류: JSON 파싱 또는 데이터베이스 저장 중 문제가 발생했습니다.\n" + e.message); 
-        console.error("전체 에러 내역:", e);
-    } finally { 
-        loadingEl.style.display = "none"; 
-    }
-}
         window.switchView = function(viewId) {
             ['main', 'study', 'admin-folder', 'admin-register'].forEach(id => document.getElementById(id + '-view').classList.add('hidden'));
             document.getElementById(viewId + '-view').classList.remove('hidden');
@@ -356,12 +381,10 @@
             const item = filteredSentences[currentIndex];
             const sentenceEl = document.getElementById('study-sentence');
             
-            // 핵심 로직: 정규식으로 '단어+s/es' 형태까지 포괄하여 탐색
             const expBase = currentExpression.replace(/ /g, "\\s+");
             const regex = new RegExp(`\\b${expBase}(s|es|ed|ing)?\\b`, 'gi');
             
             let html = item.eng.replace(regex, (match) => `<span class="expression-highlight">${match}</span>`);
-            // 추가로 나머지 단어를 빈칸 처리
             html = html.replace(/<span class="expression-highlight">.*?<\/span>/g, "___KEEP___")
                        .replace(/([a-zA-Z0-9'-]+)/g, `<span class="blank" ontouchstart="this.classList.add('reveal')" ontouchend="this.classList.remove('reveal')">$1</span>`)
                        .replace(/___KEEP___/g, (match) => match);
