@@ -211,51 +211,67 @@
         }
 
         window.generate10SentencesWithAI = async function() {
-            const apiKey = document.getElementById('api-key-input').value.trim();
-            const modelName = document.getElementById('ai-model-select').value;
-            const difficulty = document.getElementById('ai-difficulty-select').value;
-            
-            if (!apiKey) {
-                alert("Gemini API 키를 입력해주세요!");
-                document.getElementById('api-key-input').focus();
-                return;
-            }
+    const apiKey = document.getElementById('api-key-input').value.trim();
+    const modelName = document.getElementById('ai-model-select').value;
+    const difficulty = document.getElementById('ai-difficulty-select').value;
+    
+    if (!apiKey) {
+        alert("Gemini API 키를 입력해주세요!");
+        document.getElementById('api-key-input').focus();
+        return;
+    }
 
-            // 입력한 API 키를 로컬 스토리지에 저장
-            localStorage.setItem("savedGeminiApiKey", apiKey);
+    localStorage.setItem("savedGeminiApiKey", apiKey);
 
-            const loadingEl = document.getElementById('ai-loading');
-            loadingEl.style.display = "block";
+    const loadingEl = document.getElementById('ai-loading');
+    loadingEl.style.display = "block";
 
-            const promptMessage = `너는 전문적인 영어 선생님이야. 핵심 표현 '${selectedAdminFolder}'(변형된 형태 포함)를 포함하는 영어 문장 10개와 뜻을 만들어줘. 결과를 JSON 배열로만 작성해.`;
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-            
-            try {
-                const res = await fetch(url, { 
-                    method: 'POST', 
-                    headers: { 'Content-Type': 'application/json' }, 
-                    body: JSON.stringify({ contents: [{ parts: [{ text: promptMessage }] }] }) 
-                });
-                const data = await res.json();
-                
-                // API 오류 방어 코드 (응답이 없을 때 처리)
-                if (!data.candidates || data.candidates.length === 0) {
-                    console.error("API 응답 상세 내용:", data);
-                    throw new Error("AI가 응답을 주지 않았습니다. (API Key가 유효한지, 또는 할당량이 초과되지 않았는지 확인해주세요.)");
-                }
-
-                const aiText = data.candidates[0].content.parts[0].text.replace(/```json/g, "").replace(/```/g, "").trim();
-                const results = JSON.parse(aiText);
-                results.forEach(item => push(ref(db, 'sentences'), { eng: item.eng, expression: selectedAdminFolder, kor: item.kor }));
-                alert("10개의 문장이 생성되었습니다.");
-            } catch(e) { 
-                alert("생성 오류: " + e.message); 
-                console.error(e);
-            } finally { 
-                loadingEl.style.display = "none"; 
-            }
+    // 💡 [수정 1] AI에게 정확한 JSON 키값(eng, kor)을 쓰도록 강력하게 지시합니다.
+    const promptMessage = `너는 전문적인 영어 선생님이야. 핵심 표현 '${selectedAdminFolder}'(변형된 형태 포함)를 포함하는 난이도 '${difficulty}'의 영어 문장 10개와 뜻을 만들어줘. 
+결과는 반드시 아래 형태의 JSON 배열로만 작성해:
+[{"eng": "영어문장", "kor": "한국어뜻"}]`;
+    
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+    
+    try {
+        const res = await fetch(url, { 
+            method: 'POST', 
+            headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify({ contents: [{ parts: [{ text: promptMessage }] }] }) 
+        });
+        const data = await res.json();
+        
+        if (!data.candidates || data.candidates.length === 0) {
+            console.error("API 응답 에러:", data);
+            throw new Error("AI 응답을 받지 못했습니다. API 키나 할당량을 확인하세요.");
         }
 
+        let aiText = data.candidates[0].content.parts[0].text;
+        // 마크다운 백틱 제거
+        aiText = aiText.replace(/```json/g, "").replace(/```/g, "").trim();
+        const results = JSON.parse(aiText);
+        
+        // 💡 [수정 2] AI가 혹시 다른 키 이름(sentence, english 등)을 쓰더라도 안전하게 저장되도록 방어 코드 추가
+        results.forEach(item => {
+            const engText = item.eng || item.english || item.sentence || item.en;
+            const korText = item.kor || item.korean || item.meaning || item.ko;
+            
+            // 데이터가 undefined가 아닐 때만 Firebase에 푸시
+            if (engText && korText) {
+                push(ref(db, 'sentences'), { eng: engText, expression: selectedAdminFolder, kor: korText });
+            } else {
+                console.warn("AI가 생성한 데이터 형식이 맞지 않아 건너뜁니다:", item);
+            }
+        });
+        
+        alert("10개의 문장이 성공적으로 생성되었습니다!");
+    } catch(e) { 
+        alert("생성 오류: JSON 파싱 또는 데이터베이스 저장 중 문제가 발생했습니다.\n" + e.message); 
+        console.error("전체 에러 내역:", e);
+    } finally { 
+        loadingEl.style.display = "none"; 
+    }
+}
         window.switchView = function(viewId) {
             ['main', 'study', 'admin-folder', 'admin-register'].forEach(id => document.getElementById(id + '-view').classList.add('hidden'));
             document.getElementById(viewId + '-view').classList.remove('hidden');
