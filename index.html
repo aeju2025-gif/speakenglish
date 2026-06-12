@@ -35,7 +35,7 @@
 
         .btn { background-color: var(--primary-color); color: white; border: none; padding: 15px 25px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 18px; }
         .btn:hover { opacity: 0.9; }
-        .btn-ai { background-color: #8e44ad; width: 100%; } 
+        .btn-ai { background-color: #8e44ad; width: 100%; margin-top: 10px;} 
         
         .admin-header { border-bottom: 3px solid var(--admin-color); padding-bottom: 15px; margin-bottom: 25px; color: var(--admin-color); font-size: 32px; }
         .form-group { margin-bottom: 20px; }
@@ -66,6 +66,11 @@
         .action-btn { padding: 6px 12px; font-size: 15px; margin-left: 10px; border: none; border-radius: 4px; cursor: pointer; color: white; }
         .btn-edit { background: #ff9800; }
         .btn-delete { background: #ef5350; }
+
+        /* API 입력 필드 관련 스타일 추가 */
+        .api-input-group { margin-bottom: 15px; }
+        .api-input-group label { font-weight: bold; color: #333; display: block; margin-bottom: 8px; font-size: 16px; }
+        .api-input-group input, .api-input-group select { width: 100%; padding: 10px; font-size: 16px; border-radius: 8px; border: 1px solid #ccc; box-sizing: border-box; }
     </style>
 </head>
 <body>
@@ -109,15 +114,31 @@
         <div class="folder-badge">현재 폴더 표현: <span id="current-folder-title"></span></div>
         
         <div style="background: #f3e5f5; padding: 20px; border-radius: 12px; border: 2px dashed #8e44ad; margin-bottom: 25px;">
-            <span style="font-size: 18px; font-weight: bold; color: #8e44ad;">🤖 AI 추천 문장 10개 자동 생성 (Gemini 2.5 Flash)</span>
-            <p style="margin: 5px 0 15px 0; color: #666; font-size: 14px;">선택한 난이도에 맞춰 10개의 예문을 즉시 생성합니다.</p>
+            <span style="font-size: 18px; font-weight: bold; color: #8e44ad;">🤖 AI 추천 문장 10개 자동 생성</span>
+            <p style="margin: 5px 0 15px 0; color: #666; font-size: 14px;">API 키를 입력하고 모델과 난이도를 선택하여 즉시 생성하세요.</p>
             
-            <label style="font-weight:bold; color:#333; display:block; margin-bottom:8px;">📊 문장 난이도 선택</label>
-            <select id="ai-difficulty-select" style="margin-bottom:15px; padding:10px; font-size:16px; width:100%; border-radius:8px; border:1px solid #ccc;">
-                <option value="초급(쉽고 짧은 일상 문장)">하 (초급 - 쉽고 짧은 문장)</option>
-                <option value="중급(자주 쓰이는 실용적인 문장)" selected>중 (중급 - 일상적인 실용 문장)</option>
-                <option value="고급(복잡하고 어휘 수준이 높은 문장)">상 (고급 - 복잡하고 수준 높은 문장)</option>
-            </select>
+            <div class="api-input-group">
+                <label>🔑 Gemini API 키</label>
+                <input type="password" id="api-key-input" placeholder="AIzaSy... (입력된 키는 브라우저에 저장됩니다)">
+            </div>
+
+            <div class="api-input-group">
+                <label>🧠 AI 모델 선택</label>
+                <select id="ai-model-select">
+                    <option value="gemini-1.5-flash">Gemini 1.5 Flash (빠르고 경제적)</option>
+                    <option value="gemini-1.5-pro">Gemini 1.5 Pro (고성능/고품질)</option>
+                    <option value="gemini-2.5-flash" selected>Gemini 2.5 Flash (최신/권장)</option>
+                </select>
+            </div>
+
+            <div class="api-input-group" style="margin-bottom: 0;">
+                <label>📊 문장 난이도 선택</label>
+                <select id="ai-difficulty-select">
+                    <option value="초급(쉽고 짧은 일상 문장)">하 (초급 - 쉽고 짧은 문장)</option>
+                    <option value="중급(자주 쓰이는 실용적인 문장)" selected>중 (중급 - 일상적인 실용 문장)</option>
+                    <option value="고급(복잡하고 어휘 수준이 높은 문장)">상 (고급 - 복잡하고 수준 높은 문장)</option>
+                </select>
+            </div>
 
             <button class="btn btn-ai" onclick="generate10SentencesWithAI()">🪄 AI로 새로운 10문제 자동 생성하기</button>
             <div id="ai-loading" class="loading">⏳ AI가 문장을 생성 중입니다...</div>
@@ -161,8 +182,13 @@
         let filteredSentences = [];
         let currentIndex = 0;
 
-        const GEMINI_API_KEY = "AIzaSyCzilXVeGGB80Zj4rmwui4t012h6j-0kQk";
-        const AI_MODEL = "gemini-2.5-flash";
+        // 브라우저에 저장된 API 키가 있다면 불러오기
+        document.addEventListener("DOMContentLoaded", () => {
+            const savedApiKey = localStorage.getItem("savedGeminiApiKey");
+            if (savedApiKey) {
+                document.getElementById('api-key-input').value = savedApiKey;
+            }
+        });
 
         onValue(ref(db, 'sentences'), (snapshot) => {
             document.getElementById('loading-data').style.display = 'none';
@@ -185,43 +211,51 @@
         }
 
         window.generate10SentencesWithAI = async function() {
-    const difficulty = document.getElementById('ai-difficulty-select').value;
-    const loadingEl = document.getElementById('ai-loading');
-    loadingEl.style.display = "block";
+            const apiKey = document.getElementById('api-key-input').value.trim();
+            const modelName = document.getElementById('ai-model-select').value;
+            const difficulty = document.getElementById('ai-difficulty-select').value;
+            
+            if (!apiKey) {
+                alert("Gemini API 키를 입력해주세요!");
+                document.getElementById('api-key-input').focus();
+                return;
+            }
 
-    const promptMessage = `너는 전문적인 영어 선생님이야. 핵심 표현 '${selectedAdminFolder}'를 반드시 포함하는 영어 문장 10개와 그에 맞는 한국어 번역 뜻을 만들어줘. 문장의 수준은 '${difficulty}' 수준으로 맞춰서 작성해. 결과는 JSON 배열로만 작성해.`;
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${AI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
-    
-    try {
-        const response = await fetch(url, { 
-            method: 'POST', 
-            headers: { 'Content-Type': 'application/json' }, 
-            body: JSON.stringify({ contents: [{ parts: [{ text: promptMessage }] }] }) 
-        });
-        
-        const data = await response.json();
+            // 입력한 API 키를 로컬 스토리지에 저장
+            localStorage.setItem("savedGeminiApiKey", apiKey);
 
-        // [핵심 수정] 여기서 data.candidates가 있는지 먼저 확인합니다.
-        if (!data.candidates || data.candidates.length === 0) {
-            console.error("API 응답 상세 내용:", data); // 개발자 도구(F12)에서 확인 가능
-            throw new Error("AI가 응답을 주지 않았습니다. (API Key 확인, 할당량 초과, 또는 안전 필터 차단 가능성)");
+            const loadingEl = document.getElementById('ai-loading');
+            loadingEl.style.display = "block";
+
+            const promptMessage = `너는 전문적인 영어 선생님이야. 핵심 표현 '${selectedAdminFolder}'(변형된 형태 포함)를 포함하는 영어 문장 10개와 뜻을 만들어줘. 결과를 JSON 배열로만 작성해.`;
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+            
+            try {
+                const res = await fetch(url, { 
+                    method: 'POST', 
+                    headers: { 'Content-Type': 'application/json' }, 
+                    body: JSON.stringify({ contents: [{ parts: [{ text: promptMessage }] }] }) 
+                });
+                const data = await res.json();
+                
+                // API 오류 방어 코드 (응답이 없을 때 처리)
+                if (!data.candidates || data.candidates.length === 0) {
+                    console.error("API 응답 상세 내용:", data);
+                    throw new Error("AI가 응답을 주지 않았습니다. (API Key가 유효한지, 또는 할당량이 초과되지 않았는지 확인해주세요.)");
+                }
+
+                const aiText = data.candidates[0].content.parts[0].text.replace(/```json/g, "").replace(/```/g, "").trim();
+                const results = JSON.parse(aiText);
+                results.forEach(item => push(ref(db, 'sentences'), { eng: item.eng, expression: selectedAdminFolder, kor: item.kor }));
+                alert("10개의 문장이 생성되었습니다.");
+            } catch(e) { 
+                alert("생성 오류: " + e.message); 
+                console.error(e);
+            } finally { 
+                loadingEl.style.display = "none"; 
+            }
         }
 
-        const aiText = data.candidates[0]?.content?.parts?.[0]?.text?.replace(/```json/g, "").replace(/```/g, "").trim();
-        
-        if (!aiText) throw new Error("응답 형식에 문제가 있습니다.");
-
-        const results = JSON.parse(aiText);
-        results.forEach(item => push(ref(db, 'sentences'), { eng: item.eng, expression: selectedAdminFolder, kor: item.kor }));
-        alert("10개의 문장이 생성되었습니다.");
-
-    } catch(e) { 
-        alert("생성 오류 발생: " + e.message);
-        console.error(e); // F12 콘솔창에서 정확한 원인 확인
-    } finally { 
-        loadingEl.style.display = "none"; 
-    }
-}
         window.switchView = function(viewId) {
             ['main', 'study', 'admin-folder', 'admin-register'].forEach(id => document.getElementById(id + '-view').classList.add('hidden'));
             document.getElementById(viewId + '-view').classList.remove('hidden');
@@ -302,44 +336,23 @@
             renderStudyCard();
         }
 
-        // 핵심 수정된 부분: 정규식으로 동사 변형 포함하여 인식
         window.renderStudyCard = function() {
-            if(filteredSentences.length === 0) return;
-            const currentItem = filteredSentences[currentIndex];
+            const item = filteredSentences[currentIndex];
             const sentenceEl = document.getElementById('study-sentence');
-            const meaningEl = document.getElementById('study-meaning');
+            
+            // 핵심 로직: 정규식으로 '단어+s/es' 형태까지 포괄하여 탐색
+            const expBase = currentExpression.replace(/ /g, "\\s+");
+            const regex = new RegExp(`\\b${expBase}(s|es|ed|ing)?\\b`, 'gi');
+            
+            let html = item.eng.replace(regex, (match) => `<span class="expression-highlight">${match}</span>`);
+            // 추가로 나머지 단어를 빈칸 처리
+            html = html.replace(/<span class="expression-highlight">.*?<\/span>/g, "___KEEP___")
+                       .replace(/([a-zA-Z0-9'-]+)/g, `<span class="blank" ontouchstart="this.classList.add('reveal')" ontouchend="this.classList.remove('reveal')">$1</span>`)
+                       .replace(/___KEEP___/g, (match) => match);
+
+            sentenceEl.innerHTML = html;
+            document.getElementById('study-meaning').innerText = item.kor;
             document.getElementById('page-info').innerText = `${currentIndex + 1} / ${filteredSentences.length}`;
-
-            let rawEng = currentItem.eng;
-            const targetExp = currentItem.expression;
-            const escapeRegExp = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            
-            // 핵심 로직: 표현식 사이의 공백을 변형 가능한 패턴으로 대체
-            const flexibleExp = escapeRegExp(targetExp).replace(/ /g, '(s|es|ed|ing)?\\s+');
-            const expRegex = new RegExp(`\\b${flexibleExp}(s|es|ed|ing)?\\b`, 'gi');
-            
-            let matchText = "";
-            rawEng = rawEng.replace(expRegex, (match) => { matchText = match; return "___EXPRESSION_PLACEHOLDER___"; });
-
-            const tokens = rawEng.split(/(\s+)/);
-            let processedHTML = "";
-            tokens.forEach(token => {
-                if (token.trim() === "") processedHTML += token;
-                else if (token === "___EXPRESSION_PLACEHOLDER___") processedHTML += `<span class="expression-highlight">${matchText}</span>`;
-                else {
-                    const match = token.match(/^([a-zA-Z0-9'-]+)([^a-zA-Z0-9'-]*)$/);
-                    if (match) {
-                        processedHTML += `<span class="blank" ontouchstart="toggleBlank(this, true)" ontouchend="toggleBlank(this, false)" onmousedown="toggleBlank(this, true)" onmouseup="toggleBlank(this, false)">${match[1]}</span>${match[2]}`;
-                    } else processedHTML += token;
-                }
-            });
-            sentenceEl.innerHTML = processedHTML;
-            meaningEl.innerText = currentItem.kor;
-            document.getElementById('next-btn').innerText = (currentIndex === filteredSentences.length - 1) ? "학습 완료" : "다음 문장 ➡️";
-        }
-
-        window.toggleBlank = function(element, isShow) { 
-            if(isShow) element.classList.add('reveal'); else element.classList.remove('reveal'); 
         }
 
         window.nextSentence = function() {
