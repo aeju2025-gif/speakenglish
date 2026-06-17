@@ -66,6 +66,9 @@
         .action-btn { padding: 6px 12px; font-size: 15px; margin-left: 10px; border: none; border-radius: 4px; cursor: pointer; color: white; }
         .btn-edit { background: #ff9800; }
         .btn-delete { background: #ef5350; }
+
+        .ai-controls { display: flex; gap: 15px; margin-bottom: 15px; }
+        .ai-controls select { flex: 1; padding: 12px; font-size: 16px; border-radius: 8px; border: 1px solid #ccc; }
     </style>
 </head>
 <body>
@@ -114,14 +117,22 @@
         
         <div style="background: #f3e5f5; padding: 20px; border-radius: 12px; border: 2px dashed #8e44ad; margin-bottom: 25px;">
             <span style="font-size: 18px; font-weight: bold; color: #8e44ad;">🤖 AI 추천 문장 10개 자동 생성 및 등록</span>
-            <p style="margin: 5px 0 15px 0; color: #666; font-size: 14px;">선택한 AI 모델을 활용해 현재 표현에 맞는 10개의 예문을 즉시 생성합니다.</p>
+            <p style="margin: 5px 0 15px 0; color: #666; font-size: 14px;">선택한 AI 모델과 난이도를 설정해 예문을 즉시 생성합니다.</p>
             
-            <select id="ai-model-select" onchange="saveConfig()" style="margin-bottom:15px; padding:10px; font-size:16px;">
-                <option value="gemini-2.0-flash">Google Gemini 2.0 Flash</option>
-                <option value="gemini-2.5-flash">Google Gemini 2.5 Flash</option>
-                <option value="gemini-3.0-flash">Google Gemini 3.0 Flash</option>
-                <option value="gpt-4o-mini">OpenAI GPT-4o-mini</option>
-            </select>
+            <div class="ai-controls">
+                <select id="ai-model-select" onchange="saveConfig()">
+                    <option value="gemini-2.0-flash">Google Gemini 2.0 Flash</option>
+                    <option value="gemini-2.5-flash">Google Gemini 2.5 Flash</option>
+                    <option value="gemini-3.0-flash">Google Gemini 3.0 Flash</option>
+                    <option value="gpt-4o-mini">OpenAI GPT-4o-mini</option>
+                </select>
+                
+                <select id="difficulty-select">
+                    <option value="low">🌱 난이도: 하 (초보/짧은 문장)</option>
+                    <option value="medium" selected>🌿 난이도: 중 (일상/보통 길이)</option>
+                    <option value="high">🌳 난이도: 상 (비즈니스/복잡한 문장)</option>
+                </select>
+            </div>
 
             <button class="btn btn-ai" onclick="generate10SentencesWithAI()">🪄 AI로 새로운 10문제 자동 생성하기</button>
             <div id="ai-loading" class="loading">⏳ AI가 문장을 생성 중입니다...</div>
@@ -175,10 +186,9 @@
             localStorage.setItem('ai_model', document.getElementById('ai-model-select').value);
         }
 
-        // Firebase 데이터 불러오기 리스너 (여기서 로딩 메시지를 숨깁니다)
         const sentencesRef = ref(db, 'sentences');
         onValue(sentencesRef, (snapshot) => {
-            document.getElementById('loading-data').style.display = 'none'; // 무한 로딩 해결
+            document.getElementById('loading-data').style.display = 'none';
             sentenceData = [];
             folderList = [];
             
@@ -192,7 +202,6 @@
                 });
             }
             
-            // 화면 갱신
             const mainViewHidden = document.getElementById('main-view').classList.contains('hidden');
             const adminFolderViewHidden = document.getElementById('admin-folder-view').classList.contains('hidden');
             const adminRegisterViewHidden = document.getElementById('admin-register-view').classList.contains('hidden');
@@ -202,10 +211,11 @@
             if (!adminRegisterViewHidden) updateAdminSentenceList();
         });
 
-        // ================= 핵심 기능: AI 문제 생성 =================
+        // ================= 핵심 기능: AI 문제 생성 (난이도 적용) =================
         window.generate10SentencesWithAI = async function() {
             const apiKey = document.getElementById('api-key-input').value.trim();
             const model = document.getElementById('ai-model-select').value;
+            const difficulty = document.getElementById('difficulty-select').value;
             
             if(!apiKey) {
                 alert("API Key를 입력해주세요.");
@@ -215,7 +225,19 @@
             const loadingEl = document.getElementById('ai-loading');
             loadingEl.style.display = "block";
 
-            const promptMessage = `너는 영어 선생님이야. 핵심 표현 '${selectedAdminFolder}'를 반드시 포함하는 자연스럽고 실용적인 영어 문장 10개와 그에 맞는 한국어 번역 뜻을 만들어줘. 결과는 마크다운 없이 오직 아래 형태의 순수한 JSON 배열 형태로만 답변해.
+            // 난이도별 프롬프트 지시사항 분기 처리
+            let difficultyText = "";
+            if (difficulty === "low") {
+                difficultyText = "난이도: [쉬움]. 초등학생이나 영어 초보자가 쉽게 이해할 수 있는 아주 짧고 기초적인 단어로만 구성된 문장을 만들어줘.";
+            } else if (difficulty === "medium") {
+                difficultyText = "난이도: [보통]. 일반 성인들이 일상 대화에서 자주 쓰는 자연스러운 길이와 어휘 수준의 문장을 만들어줘.";
+            } else if (difficulty === "high") {
+                difficultyText = "난이도: [어려움]. 비즈니스 상황, 수능, 토익/토플 수준의 다소 길고 복잡한 문법 구조와 고급 어휘를 사용한 문장을 만들어줘.";
+            }
+
+            const promptMessage = `너는 영어 선생님이야. 핵심 표현 '${selectedAdminFolder}'를 반드시 포함하는 영어 문장 10개와 그에 맞는 한국어 번역 뜻을 만들어줘.
+${difficultyText}
+결과는 마크다운 없이 오직 아래 형태의 순수한 JSON 배열 형태로만 답변해.
 [
     {"eng": "영어 문장 1", "kor": "한국어 뜻 1"},
     {"eng": "영어 문장 2", "kor": "한국어 뜻 2"}
@@ -258,7 +280,8 @@
                             kor: item.kor
                         });
                     });
-                    alert(`${model} 모델로 성공적으로 10개의 문제가 생성되었습니다!`);
+                    const diffLabel = difficulty === 'low' ? '하' : difficulty === 'medium' ? '중' : '상';
+                    alert(`난이도 [${diffLabel}] 수준으로 10개의 문제가 생성되었습니다!`);
                 } else {
                     alert("AI 응답 형식이 올바르지 않습니다.");
                 }
@@ -298,7 +321,6 @@
             }
         }
 
-        // --- 관리자: 폴더 추가 ---
         window.createNewFolder = function() {
             const folderName = document.getElementById('new-folder-name').value.trim();
             if(!folderName) return;
@@ -310,7 +332,6 @@
             document.getElementById('new-folder-name').value = "";
         }
 
-        // --- 관리자: 폴더 목록 렌더링 ---
         window.renderAdminFolderList = function() {
             const listEl = document.getElementById('admin-folder-list');
             listEl.innerHTML = "";
@@ -332,7 +353,6 @@
             updateAdminSentenceList();
         }
 
-        // --- 관리자: 수동 등록/수정/삭제 ---
         window.addSentence = function() {
             const eng = document.getElementById('input-eng').value.trim();
             const kor = document.getElementById('input-kor').value.trim();
@@ -417,7 +437,6 @@
             renderStudyCard();
         }
 
-        // 💡 [개선됨] 동사 변형을 인식하는 학습 카드 렌더링 로직
         window.renderStudyCard = function() {
             if(filteredSentences.length === 0) return;
             const currentItem = filteredSentences[currentIndex];
@@ -432,7 +451,6 @@
             let words = targetExp.trim().split(/\s+/);
             let firstWord = escapeRegExp(words[0].toLowerCase());
             
-            // 첫 번째 단어가 동사일 확률이 높으므로 변형 형태를 허용합니다.
             let verbRegex = firstWord;
             if (firstWord === 'have') verbRegex = '(have|has|had|having)';
             else if (firstWord === 'do') verbRegex = '(do|does|did|doing)';
@@ -445,7 +463,6 @@
             let regexStr = restOfWords ? `\\b${verbRegex}\\s+${restOfWords}\\b` : `\\b${verbRegex}\\b`;
             const expRegex = new RegExp(regexStr, 'gi');
 
-            // 한 문장 안에 핵심 표현이 여러 번 나올 경우를 대비해 매칭된 원래 텍스트를 배열로 저장
             let matchTexts = [];
             rawEng = rawEng.replace(expRegex, (match) => { 
                 matchTexts.push(match); 
